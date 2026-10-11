@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error("Fetch creators error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch creators" },
+      { success: false, error: error?.message || "Failed to fetch creators", stack: error?.stack },
       { status: 500 }
     );
   }
