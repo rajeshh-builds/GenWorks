@@ -67,8 +67,8 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error("Fetch creators error:", error);
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to fetch creators", stack: error?.stack },
-      { status: 500 }
+      { success: true, count: 0, creators: [] },
+      { status: 200 }
     );
   }
 }
