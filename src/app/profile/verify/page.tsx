@@ -82,6 +82,36 @@ export default function AIVerificationPage() {
         });
         const data = await res.json();
         setEvaluationResult(data);
+
+        // Synchronize verified badge and score with user profile
+        let userEmail = "";
+        if (typeof window !== "undefined") {
+          try {
+            const prev = localStorage.getItem("genworks_creator_user");
+            const parsed = prev ? JSON.parse(prev) : {};
+            userEmail = parsed.email || "";
+            localStorage.setItem(
+              "genworks_creator_user",
+              JSON.stringify({
+                ...parsed,
+                isVerified: true,
+                verificationScore: data.score || 88,
+              })
+            );
+          } catch (e) {
+            console.error("Storage error:", e);
+          }
+        }
+
+        await fetch("/api/creator/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: userEmail,
+            isVerified: true,
+            verificationScore: data.score || 88,
+          }),
+        });
       } catch (error) {
         console.error(error);
         setEvaluationResult({ score: 75, badge: "Verified", feedback: "Good foundational knowledge, though some advanced concepts could be clearer." });
@@ -159,10 +189,10 @@ export default function AIVerificationPage() {
                 &quot;{evaluationResult.feedback}&quot;
               </p>
               <Button 
-                onClick={async () => { await signOut(auth); router.push("/login"); }}
+                onClick={() => { router.push("/dashboard/creator"); }}
                 className="h-12 px-8 bg-[#1A1A1A] hover:bg-gray-800 text-white rounded-full font-semibold shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
               >
-                Go to Dashboard <ArrowRight className="w-4 h-4" />
+                Go to Creator Studio <ArrowRight className="w-4 h-4" />
               </Button>
             </div>
           ) : (

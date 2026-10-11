@@ -3,6 +3,8 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
@@ -18,7 +20,9 @@ export async function POST(req: Request) {
     // Upsert User: if exists, return. if not, create.
     const user = await prisma.user.upsert({
       where: { email },
-      update: {}, // No updates if they exist
+      update: {
+        ...(name ? { name } : {}),
+      },
       create: {
         email,
         name: name || "",
@@ -26,22 +30,27 @@ export async function POST(req: Request) {
       },
     });
 
-    // If it's a creator, create an empty profile linked to them
-    if (user.role === "CREATOR") {
-      const existingProfile = await prisma.creatorProfile.findUnique({
+    // If it's a creator, ensure a CreatorProfile exists linked to them
+    let creatorProfile = null;
+    if (user.role === "CREATOR" || !user.role) {
+      creatorProfile = await prisma.creatorProfile.findUnique({
         where: { userId: user.id },
       });
 
-      if (!existingProfile) {
-        await prisma.creatorProfile.create({
+      if (!creatorProfile) {
+        creatorProfile = await prisma.creatorProfile.create({
           data: {
             userId: user.id,
+            bio: "AI Content Creator on GenWorks",
+            tools: ["Midjourney v6", "Runway Gen-3"],
+            isVerified: false,
+            verificationScore: 0,
           },
         });
       }
     }
 
-    return NextResponse.json({ success: true, user }, { status: 200 });
+    return NextResponse.json({ success: true, user, creatorProfile }, { status: 200 });
   } catch (error: any) {
     console.error("Error syncing user to MongoDB:", error);
     return NextResponse.json({ error: "Failed to sync user" }, { status: 500 });

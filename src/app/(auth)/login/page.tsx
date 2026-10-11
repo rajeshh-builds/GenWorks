@@ -19,14 +19,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        router.push("/dashboard/creator");
-      }
-    });
-    return () => unsubscribe();
-  }, [router]);
+  // Auto-redirect removed to enforce strict real-time MongoDB authentication validation
+  // useEffect(() => { ... })
 
 
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -38,12 +32,58 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       setErrorMsg("");
-      // This will FAIL if they are not registered, which fits your requirement perfectly
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push("/dashboard/creator");
-    } catch (error: unknown) {
+
+      // Authenticate with Firebase & MongoDB
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Verify user in MongoDB / Prisma
+      const checkRes = await fetch(`/api/creator/profile?email=${encodeURIComponent(user.email || email)}`);
+      const checkData = await checkRes.json();
+
+      if (checkData.success && checkData.profile) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "genworks_creator_user",
+            JSON.stringify({
+              email: user.email || email,
+              name: checkData.profile.user?.name || "AI Creator",
+              id: checkData.profile.id,
+              userId: checkData.profile.userId,
+              role: checkData.profile.isVerified ? "AI Creator • Elite Gold Verified" : "AI Content Creator",
+            })
+          );
+        }
+        router.push("/dashboard/creator");
+      } else {
+        // Not yet in MongoDB -> sync account and direct to profile setup
+        try {
+          await fetch('/api/auth/sync-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user.email || email, name: (user.email || email).split("@")[0], role: 'CREATOR' }),
+          });
+        } catch (e) {
+          console.error("Auto sync on login failed:", e);
+        }
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "genworks_creator_user",
+            JSON.stringify({
+              email: user.email || email,
+              name: (user.email || email).split("@")[0],
+              role: "CREATOR",
+            })
+          );
+        }
+        router.push("/profile/edit");
+      }
+    } catch (error: any) {
       console.error("Error signing in with Email:", error);
-      setErrorMsg("Login failed: Only registered creators can access.");
+      setErrorMsg(error?.message?.includes("invalid-credential") 
+        ? "Invalid email or password. Please check your credentials." 
+        : error?.message || "Login failed.");
     } finally {
       setIsLoading(false);
     }
@@ -52,10 +92,43 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       setIsLoading(true);
-      await signInWithPopup(auth, googleProvider);
-      router.push("/dashboard/creator");
-    } catch (error) {
+      setErrorMsg("");
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      if (!user?.email) {
+        throw new Error("Unable to retrieve email from Google.");
+      }
+
+      // Check DB if creator is already registered in MongoDB / Prisma
+      const checkRes = await fetch(`/api/creator/profile?email=${encodeURIComponent(user.email)}`);
+      const checkData = await checkRes.json();
+
+      if (checkData.success && checkData.profile) {
+        // Registered creator -> Allow entry into Studio Dashboard
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "genworks_creator_user",
+            JSON.stringify({
+              email: user.email,
+              name: user.displayName || checkData.profile.user?.name || "AI Creator",
+              id: checkData.profile.id,
+              userId: checkData.profile.userId,
+              role: checkData.profile.isVerified ? "AI Creator • Elite Gold Verified" : "AI Content Creator",
+            })
+          );
+        }
+        router.push("/dashboard/creator");
+      } else {
+        // NOT registered -> Must complete registration & onboarding first!
+        setErrorMsg("Account not found. Please complete creator registration & onboarding first.");
+        setTimeout(() => {
+          router.push(`/register?email=${encodeURIComponent(user.email || "")}`);
+        }, 1500);
+      }
+    } catch (error: any) {
       console.error("Error signing in with Google:", error);
+      setErrorMsg(error?.message || "Google sign in failed.");
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +221,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center p-8 sm:p-12 min-h-[50vh] lg:min-h-screen">
         <div className="w-full max-w-[400px]">
           
-          <div className="mb-10 text-center lg:text-left">
+          <div className="mb-8 text-center lg:text-left">
             <div className="lg:hidden mb-8 flex justify-center">
                <Logo className="scale-110" />
             </div>
@@ -162,12 +235,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleEmailLogin} className="space-y-5 mb-8">
             <div className="space-y-2">
-              <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Email</label>
+              <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Work Email</label>
               <Input 
                 type="email" 
-                placeholder="rajesh@example.com" 
+                placeholder="name@genworks.ai" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required
               />
             </div>
             <div className="space-y-2">
@@ -198,42 +272,13 @@ export default function LoginPage() {
             <Button 
               type="submit"
               disabled={isLoading}
-              className="w-full h-12 text-[15px] shadow-lg shadow-[#D3A373]/20 bg-[#D3A373] hover:bg-[#c29362] text-white"
+              className="w-full h-12 text-[15px] shadow-lg shadow-[#D3A373]/20 bg-[#D3A373] hover:bg-[#c29362] text-white font-bold rounded-xl"
             >
-              Sign In to Studio
+              {isLoading ? "Signing In..." : "Sign In to Studio"}
             </Button>
           </form>
 
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-100"></div>
-            </div>
-            <div className="relative flex justify-center text-[11px] font-bold tracking-widest uppercase">
-              <span className="bg-white px-4 text-gray-400">Or continue with</span>
-            </div>
-          </div>
-
-          {/* Google Button */}
-          <Button 
-            variant="outline"
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-            className="w-full h-12 text-[15px] border-gray-200 text-[#1A1A1A] hover:bg-gray-50"
-          >
-            {isLoading ? (
-              <div className="w-5 h-5 border-2 border-[#1A1A1A] border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <svg viewBox="0 0 24 24" width="20" height="20" className="mr-3" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-            )}
-            Google
-          </Button>
-
-          <p className="mt-10 text-center text-[14px] text-gray-500 font-medium">
+          <p className="mt-8 text-center text-[14px] text-gray-500 font-medium">
             New to GenWorks?{" "}
             <Link href="/register" className="text-[#D3A373] font-bold hover:underline">
               Sign up here.

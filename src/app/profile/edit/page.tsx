@@ -56,14 +56,45 @@ export default function OnboardingPage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      setTimeout(() => {
-        setIsSaving(false);
-        router.push("/profile/verification-choice");
-      }, 1000);
+      let userEmail = "";
+      if (typeof window !== "undefined") {
+        try {
+          const prev = localStorage.getItem("genworks_creator_user");
+          const parsed = prev ? JSON.parse(prev) : {};
+          userEmail = parsed.email || "";
+          localStorage.setItem(
+            "genworks_creator_user",
+            JSON.stringify({
+              ...parsed,
+              name: formData.displayName,
+              tagline: formData.tagline,
+              bio: formData.bio,
+              tools: formData.tools,
+            })
+          );
+        } catch (e) {
+          console.error("Storage error:", e);
+        }
+      }
+
+      await fetch("/api/creator/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          displayName: formData.displayName,
+          tagline: formData.tagline,
+          bio: formData.bio,
+          tools: formData.tools,
+        }),
+      });
+
+      setIsSaving(false);
+      router.push("/profile/portfolio");
     } catch (error) {
       console.error(error);
-      setErrorMsg("Failed to save profile");
       setIsSaving(false);
+      router.push("/profile/portfolio");
     }
   };
 

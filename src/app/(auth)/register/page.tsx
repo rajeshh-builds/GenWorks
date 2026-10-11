@@ -22,12 +22,8 @@ export default function RegisterPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        router.push("/dashboard/creator");
-      }
-    });
-    return () => unsubscribe();
+    // Note: Do NOT automatically redirect here so new creators can register freely
+    // without getting prematurely bounced to the dashboard before onboarding!
   }, [router]);
 
   const [showPassword, setShowPassword] = useState(false);
@@ -89,6 +85,16 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, name: fullName, role: 'CREATOR' }),
       });
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "genworks_creator_user",
+          JSON.stringify({
+            email,
+            name: fullName,
+            role: "CREATOR",
+          })
+        );
+      }
       router.push("/profile/edit");
     } catch (error: any) {
       setErrorMsg(error.message || "Registration failed. Email might already be in use.");
@@ -102,7 +108,29 @@ export default function RegisterPage() {
   const handleGoogleRegister = async () => {
     try {
       setIsLoading(true);
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      if (user && user.email) {
+        await fetch('/api/auth/sync-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            email: user.email, 
+            name: user.displayName || user.email.split("@")[0], 
+            role: 'CREATOR' 
+          }),
+        });
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "genworks_creator_user",
+            JSON.stringify({
+              email: user.email,
+              name: user.displayName || user.email.split("@")[0],
+              role: "CREATOR",
+            })
+          );
+        }
+      }
       router.push("/profile/edit");
     } catch (error) {
       console.error("Error signing in with Google:", error);
@@ -202,20 +230,33 @@ export default function RegisterPage() {
             </p>
           </div>
 
+            {/* Mode switch */}
+            <div className="flex items-center justify-between p-1 bg-[#f4f3ea] rounded-xl mb-6">
+              <Link
+                href="/login"
+                className="flex-1 py-2 text-center text-xs font-bold text-gray-500 hover:text-gray-900 rounded-lg transition-all"
+              >
+                Sign In
+              </Link>
+              <div className="flex-1 py-2 text-center text-xs font-bold bg-white text-[#1A1A1A] rounded-lg shadow-sm">
+                Register
+              </div>
+            </div>
+
           {step === 1 ? (
           <form onSubmit={handleSendOtp} className="space-y-4 mb-8">
             <div className="space-y-2">
               <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Full Name</label>
-              <Input type="text" placeholder="Rajesh Kumar" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              <Input type="text" placeholder="Enter your full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Email</label>
-              <Input type="email" placeholder="rajesh@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input type="email" placeholder="you@domain.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-2">
               <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Password</label>
               <div className="relative">
-                <Input type={showPassword ? "text" : "password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Input type={showPassword ? "text" : "password"} placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -224,7 +265,7 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <label className="text-[13px] font-bold tracking-wide text-[#1A1A1A] uppercase">Confirm Password</label>
               <div className="relative">
-                <Input type={showPassword ? "text" : "password"} placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                <Input type={showPassword ? "text" : "password"} placeholder="Confirm your password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
               </div>
             </div>
 
